@@ -122,88 +122,25 @@ EOF
 
 apt-get update -y 
 
-apt-get install libapache2-mod-fcgid -y
+install_build_tools
 
-apt-get install -y php8.2 php8.2-{fpm,common,cli,curl,mysql,gd,mbstring,xml,zip,intl,bcmath,opcache,imagick,redis,memcached,soap} -y
+install_asterisk_dependencies
 
-apt-get install -y \
-    build-essential \
-    git \
-    subversion \
-    autoconf \
-    automake \
-    libtool \
-    libtool-bin \
-    pkg-config \
-    bison \
-    flex 
+install_media_packages
+install_web_stack
+install_php_stack
+install_security_tools
+install_pbx_utilities
+install_python
 
-apt-get install -y \
-    libssl-dev \
-        libxml2-dev \
-        libsqlite3-dev \
-        libjansson-dev \
-        uuid-dev \
-        libedit-dev \
-        libcurl4-openssl-dev \
-        libicu-dev \
-        libsrtp2-dev \
-        libspandsp-dev \
-        libical-dev \
-        libneon27-dev \
-        unixodbc-dev \
-        odbc-mariadb\
-
- apt-get install -y ffmpeg \
-        lame \
-        mpg123 \
-        sox \
-        libasound2-dev \
-        libogg-dev \
-        libvorbis-dev
-
-apt-get install -y apache2 \
-        mariadb-server \
-        mariadb-client \
-        openssh-server
-
-
-apt-get install -y fail2ban \
-        iptables \
-        iptables-persistent \
-        ipset \
-        knockd
-
-apt-get install -y htop \
-        sngrep \
-        vim \
-        nano \
-        expect \
-        dialog \
-        net-tools
-
-apt-get install -ypython3 \
-        python3-pip \
-        python-dev-is-python3
-
-
- apt-get install -y libnewt-dev libncurses5-dev libxml2-dev default-libmysqlclient-dev  libedit-dev openvpn
-apt-get install -y php-pear sqlite3 pkg-config automake libtool autoconf uuid
-apt-get install -y   libtool-bin python-dev-is-python3 unixodbc nodejs npm 
- 
-apt-get install -y net-tools php-soap postfix 
-apt-get install webmin -y
-
-apt-get install cron -y
-
-apt-get install -y sendmail mailutils
-apt-get install redis-server redis-tools -y
-apt-get install libtiff-tools -y
-apt-get install ghostscript -y
-apt-get -y install jq libsox-fmt-all
-
-
-apt-get install ntp -y
+install_vpn_packages
+install_database_utilities
+install_messaging_packages
+install_utility_packages
+install_apache_extras 
+install_media_packages
+install_webmin_packages
+install_nodejs_packages
 
 a2enmod proxy_fcgi setenvif
 a2enconf php8.2-fpm
@@ -216,14 +153,11 @@ a2enmod php8.2
 update-alternatives --set php /usr/bin/php8.2
 systemctl restart apache2
 
+# Generate a random 24-character password using /dev/urandom
+MYSQL_ROOT_PASS=$(tr -dc 'A-Za-z0-9!@#$%^&*()_+' < /dev/urandom | head -c 24)
+
 ## Install Webmin ##
-cd /root
-wget -qO /usr/share/keyrings/debian-webmin-developers.gpg http://download.webmin.com/jcameron-key.asc
-curl -o webmin-setup-repo.sh https://raw.githubusercontent.com/webmin/webmin/master/webmin-setup-repo.sh
-sh webmin-setup-repo.sh -f
-sed -i 's|deb http://download.webmin.com/download/repository sarge contrib|#deb http://download.webmin.com/download/repository sarge contrib|' /etc/apt/sources.list
-apt-get update
-apt-get install webmin -y
+
 sed -i 's|10000|9001|g' /etc/webmin/miniserv.conf
 systemctl restart webmin
 systemctl restart apache2
@@ -398,7 +332,7 @@ asterisk -rx "database put blacklist dest app-blackhole,no-service,1"
 cd /root
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
-apt-get install -y iptables-persistent dialog
+
 #cd /etc/init.d
 wget http://incrediblepbx.com/iptables-persistent-U.tar.gz
 tar zxvf iptables-persistent-U.tar.gz
@@ -837,3 +771,202 @@ chmod +x upgrade-asterisk
 echo "upgrade-asterisk script added for easy Asterisk 23 upgrade, if desired."
 read -p "Press Enter to reboot or Ctrl-C to exit..."
 /usr/local/sbin/reboot
+
+
+install_packages() {
+    apt-get install -y "$@"
+}
+
+remove_packages() {
+    apt-get purge -y "$@"
+}
+
+enable_services() {
+    systemctl enable "$@"
+}
+
+restart_services() {
+    for svc in "$@"; do
+        systemctl restart "$svc"
+    done
+}
+
+install_base_packages() {
+    log "Installing base packages"
+
+    install_packages \
+        sudo \
+        curl \
+        wget \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+}
+
+install_build_tools() {
+    log "Installing build tools"
+
+    install_packages \
+        build-essential \
+        git \
+        subversion \
+        autoconf \
+        automake \
+        libtool \
+        libtool-bin \
+        pkg-config \
+        bison \
+        flex
+}
+
+install_asterisk_dependencies() {
+    log "Installing Asterisk dependencies"
+
+    install_packages \
+        libssl-dev \
+        libxml2-dev \
+        libsqlite3-dev \
+        libjansson-dev \
+        uuid-dev \
+        libedit-dev \
+        libcurl4-openssl-dev \
+        libicu-dev \
+        libsrtp2-dev \
+        libspandsp-dev \
+        libical-dev \
+        libneon27-dev \
+        unixodbc-dev \
+        odbc-mariadb
+}
+
+install_asterisk_build_packages() {
+    install_packages \
+        libnewt-dev \
+        libncurses5-dev \
+        libncurses-dev \
+        libxml2-dev \
+        default-libmysqlclient-dev \
+        libedit-dev \
+        unixodbc
+}
+
+install_media_packages() {
+    log "Installing media packages"
+
+    install_packages \
+        ffmpeg \
+        lame \
+        mpg123 \
+        sox \
+        libasound2-dev \
+        libogg-dev \
+        libvorbis-dev
+}
+
+install_web_stack() {
+    log "Installing Apache and MariaDB"
+
+    install_packages \
+        apache2 \
+        mariadb-server \
+        mariadb-client \
+        openssh-server
+}
+install_php_stack() {
+    log "Installing PHP"
+
+    install_packages \
+        php8.2 \
+        php8.2-cli \
+        php8.2-common \
+        php8.2-fpm \
+        php8.2-curl \
+        php8.2-mysql \
+        php8.2-gd \
+        php8.2-mbstring \
+        php8.2-intl \
+        php8.2-xml \
+        php8.2-zip \
+        php8.2-soap \
+        php8.2-bcmath \
+        php8.2-opcache \
+        php8.2-imagick \
+        php8.2-redis \
+        php8.2-memcached \
+        php-pear
+
+    a2enmod proxy_fcgi setenvif
+    a2enconf php8.2-fpm
+
+    enable_services php8.2-fpm
+}
+install_security_tools() {
+    log "Installing security tools"
+
+    install_packages \
+        fail2ban \
+        iptables \
+        iptables-persistent \
+        ipset \
+        knockd
+}
+
+install_pbx_utilities() {
+    log "Installing PBX utilities"
+
+    install_packages \
+        htop \
+        sngrep \
+        vim \
+        nano \
+        expect \
+        dialog \
+        net-tools
+}
+install_python() {
+    log "Installing Python"
+
+    install_packages \
+        python3 \
+        python3-pip \
+        python-dev-is-python3
+}
+install_vpn_packages() {
+    install_packages openvpn
+}
+install_redis_packages() {
+    install_packages \
+        redis-server \
+        redis-tools
+}
+install_database_utilities() {
+    install_packages \
+        sqlite3 \
+        uuid
+}
+install_messaging_packages() {
+    install_packages \
+        postfix \
+        mailutils
+}
+install_utility_packages() {
+    install_packages \
+    jq \
+    cron
+}
+install_apache_extras() {
+    install_packages \
+        libapache2-mod-fcgid
+}
+install_media_packages() {
+    install_packages \
+        ghostscript \
+        libtiff-tools \
+        libsox-fmt-all
+}
+install_webmin_packages() {
+    install_packages webmin
+}
+install_nodejs_packages() {
+    install_packages nodejs
+}
