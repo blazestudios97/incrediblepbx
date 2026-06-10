@@ -96,16 +96,16 @@ a2enmod proxy_fcgi setenvif
 a2enconf php8.2-fpm
 systemctl enable --now php8.2-fpm
 systemctl restart apache2
-apt-get install php8.2-{curl,mysql,gd,mbstring,xml,zip,intl,bcmath,opcache,imagick,redis,memcached,soap} -y
+apt-get install php8.2-{common,cli,curl,mysql,gd,mbstring,xml,zip,intl,bcmath,opcache,imagick,redis,memcached,soap} -y
 
 apt-get install -y software-properties-common
 LC_ALL=C.UTF-8 add-apt-repository ppa:ondrej/php -y
 
 apt-get install -y build-essential git curl wget libnewt-dev libssl-dev libncurses5-dev subversion libsqlite3-dev libjansson-dev libxml2-dev uuid-dev default-libmysqlclient-dev htop sngrep lame ffmpeg mpg123 dialog vim expect net-tools nano libedit-dev openvpn
-apt-get install -y openssh-server apache2 mariadb-server mariadb-client bison flex php8.2 php8.2-curl php8.2-cli php8.2-common php8.2-mysql php8.2-gd php8.2-mbstring php8.2-intl php8.2-xml php-pear sox sqlite3 pkg-config automake libtool autoconf unixodbc-dev uuid
+apt-get install -y openssh-server apache2 mariadb-server mariadb-client bison flex php-pear sox sqlite3 pkg-config automake libtool autoconf unixodbc-dev uuid
 apt-get install -y libasound2-dev libogg-dev libvorbis-dev libicu-dev libcurl4-openssl-dev odbc-mariadb libical-dev libneon27-dev libsrtp2-dev libspandsp-dev libtool-bin python-dev-is-python3 unixodbc nodejs npm ipset iptables
  
-apt-get install -y net-tools php8.2-common nano libedit-dev php-soap fail2ban
+apt-get install -y net-tools nano libedit-dev php-soap fail2ban
 
 apt-get -y purge php8.1 php8.3
 rm -rf /etc/php/8.1 /etc/php/8.3
