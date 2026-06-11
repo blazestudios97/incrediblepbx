@@ -68,44 +68,84 @@ MyPick=22
 echo "FreePBX does not yet support Asterisk 23. Asterisk $MyPick will be installed..."
 
 
-echo "deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware" > /etc/apt/sources.list
-echo "deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "deb http://security.debian.org trixie-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+
 
 apt-get update -y
 apt-get upgrade -y
-apt-get install sudo -y
+
+apt-get -y install sudo ca-certificates curl gnupg lsb-release debian-archive-keyring
 
 # new pieces for Debian 13
-apt-get install ca-certificates curl -y
-curl -fsSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
-CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-ARCH=$(dpkg --print-architecture)
-cat <<EOF | tee /etc/apt/sources.list.d/php.sources
+install -d -m 0755 /usr/share/keyrings
+. /etc/os-release
+CODENAME="$VERSION_CODENAME"
+
+
+## New deb822 format for Debian 13 and forward
+cat > /etc/apt/sources.list.d/debian.sources <<EOF
 Types: deb
-URIs: https://packages.sury.org/php/
-Suites: ${CODENAME}
-Components: main
-Architectures: ${ARCH}
-Signed-By: /usr/share/keyrings/deb.sury.org-php.gpg
+URIs: https://deb.debian.org/debian
+Suites: ${CODENAME} ${CODENAME}-updates
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://security.debian.org/debian-security
+Suites: ${CODENAME}-security
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
-apt-get update -y
-apt-get install php8.2 php8.2-cli php8.2-common -y
-apt-get install php8.2-fpm libapache2-mod-fcgid -y
+
+### Sury PHP Repo ###
+curl -fsSL https://packages.sury.org/php/apt.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg
+
+cat > /etc/apt/sources.list.d/sury-php.list <<EOF
+deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ ${CODENAME} main
+EOF
+
+### Webmin Repo ###
+curl -fsSL https://download.webmin.com/jcameron-key.asc \
+    | gpg --dearmor -o /usr/share/keyrings/webmin.gpg
+
+cat > /etc/apt/sources.list.d/webmin.list <<EOF
+deb [signed-by=/usr/share/keyrings/webmin.gpg] https://download.webmin.com/download/repository sarge contrib
+EOF
+
+### NodeJS Repo ###
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+  | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+
+cat > /etc/apt/sources.list.d/nodesource.list <<EOF
+deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${CODENAME} main
+EOF
+
+apt-get update -y 
+
+install_build_tools
+
+install_asterisk_dependencies
+
+install_media_packages
+install_web_stack
+install_php_stack
+install_security_tools
+install_pbx_utilities
+install_python
+
+install_vpn_packages
+install_database_utilities
+install_messaging_packages
+install_utility_packages
+install_apache_extras 
+install_media_packages
+install_webmin_packages
+install_nodejs_packages
+
 a2enmod proxy_fcgi setenvif
 a2enconf php8.2-fpm
 systemctl enable --now php8.2-fpm
 systemctl restart apache2
-apt-get install php8.2-{curl,mysql,gd,mbstring,xml,zip,intl,bcmath,opcache,imagick,redis,memcached,soap} -y
-
-apt-get install -y software-properties-common
-LC_ALL=C.UTF-8 add-apt-repository ppa:ondrej/php -y
-
-apt-get install -y build-essential git curl wget libnewt-dev libssl-dev libncurses5-dev subversion libsqlite3-dev libjansson-dev libxml2-dev uuid-dev default-libmysqlclient-dev htop sngrep lame ffmpeg mpg123 dialog vim expect net-tools nano libedit-dev openvpn
-apt-get install -y openssh-server apache2 mariadb-server mariadb-client bison flex php8.2 php8.2-curl php8.2-cli php8.2-common php8.2-mysql php8.2-gd php8.2-mbstring php8.2-intl php8.2-xml php-pear sox sqlite3 pkg-config automake libtool autoconf unixodbc-dev uuid
-apt-get install -y libasound2-dev libogg-dev libvorbis-dev libicu-dev libcurl4-openssl-dev odbc-mariadb libical-dev libneon27-dev libsrtp2-dev libspandsp-dev libtool-bin python-dev-is-python3 unixodbc nodejs npm ipset iptables
- 
-apt-get install -y net-tools php8.2-common nano libedit-dev php-soap fail2ban
 
 apt-get -y purge php8.1 php8.3
 rm -rf /etc/php/8.1 /etc/php/8.3
@@ -113,14 +153,11 @@ a2enmod php8.2
 update-alternatives --set php /usr/bin/php8.2
 systemctl restart apache2
 
+# Generate a random 24-character password using /dev/urandom
+MYSQL_ROOT_PASS=$(tr -dc 'A-Za-z0-9!@#$%^&*()_+' < /dev/urandom | head -c 24)
+
 ## Install Webmin ##
-cd /root
-wget -qO /usr/share/keyrings/debian-webmin-developers.gpg http://download.webmin.com/jcameron-key.asc
-curl -o webmin-setup-repo.sh https://raw.githubusercontent.com/webmin/webmin/master/webmin-setup-repo.sh
-sh webmin-setup-repo.sh -f
-sed -i 's|deb http://download.webmin.com/download/repository sarge contrib|#deb http://download.webmin.com/download/repository sarge contrib|' /etc/apt/sources.list
-apt-get update
-apt-get install webmin -y
+
 sed -i 's|10000|9001|g' /etc/webmin/miniserv.conf
 systemctl restart webmin
 systemctl restart apache2
@@ -223,13 +260,10 @@ systemctl disable asterisk
 killall asterisk
 touch cdr.conf
 
-apt-get update
-apt-get install sudo -y
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
+
 
 cd /usr/src/
-apt-get install cron -y
+
 wget http://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz
 tar zxvf freepbx-17.0-latest.tgz
 cd /usr/src/freepbx/
@@ -298,7 +332,7 @@ asterisk -rx "database put blacklist dest app-blackhole,no-service,1"
 cd /root
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
-apt-get install -y iptables-persistent dialog
+
 #cd /etc/init.d
 wget http://incrediblepbx.com/iptables-persistent-U.tar.gz
 tar zxvf iptables-persistent-U.tar.gz
@@ -358,7 +392,7 @@ wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/images/pbxstatus-2027D
 mv pbxstatus-2027D pbxstatus
 chmod +x pbxstatus
 
-apt-get install fail2ban -y
+
 
 # kill all the endless Fail2Ban alerts
 sed -i 's|you@example.com|devnull@localhost|' /etc/fail2ban/jail.conf
@@ -427,7 +461,7 @@ rm -f /root/upgrade-asterisk16
 rm -f /root/upgrade-asterisk18
 sed -i 's|7.3|8.2|' /root/timezone-setup
 
-apt-get install ntp -y
+
 
 echo "# .bash_profile
 # Get the aliases and functions
@@ -484,13 +518,13 @@ chmod +x pbxstatus
 # sed -i 's|lastupdateDEB|lastupdate2020|' /root/update-IncrediblePBX
 
 
-apt-get install -y sendmail mailutils
+
 systemctl enable sendmail
 systemctl start sendmail
 
 ### Install knockd ###
 
-apt-get install knockd -y
+
 sed -i 's|START_KNOCKD=0|START_KNOCKD=1|' /etc/default/knockd
 test=`ifconfig | grep eth0`
 if [ -z "$test" ]; then
@@ -555,8 +589,7 @@ rm -f /root/*.rpm
 
 # gTTS update
 apt-get update
-apt-get -y install jq libsox-fmt-all
-apt-get -y install python3-pip
+
 pip install --upgrade pip
 pip3 install --upgrade pip
 ln -s /usr/bin/pip3 /usr/bin/pip
@@ -577,8 +610,7 @@ hostname noreply.incrediblepbx.com
 
 ## Install Faxing Prep ##
 apt-get update
-apt-get install libtiff-tools -y
-apt-get install ghostscript -y
+
 sed -i '/^\[custom-fax/,/^$/d' /etc/asterisk/extensions_custom.conf
 echo '
 [ext-group](+)
@@ -684,7 +716,7 @@ mysql -u root -ppassw0rd asterisk -e 'update freepbx_settings set value = "Incre
 echo "2025" > /etc/pbx/.version
 fwconsole reload
 
-apt-get install postfix -y
+
 
 sed -i "s|deb http|deb [trusted=yes] http|" /etc/apt/sources.list
 
@@ -709,7 +741,7 @@ mkdir -p /etc/asterisk/keys/integration
 chown -R asterisk:asterisk /etc/asterisk/keys
 chmod -R 775 /etc/asterisk/keys
 apt-get update
-apt-get install redis-server redis-tools -y
+
 systemctl start redis-server
 systemctl enable redis-server
 systemctl start redis.service
@@ -739,3 +771,202 @@ chmod +x upgrade-asterisk
 echo "upgrade-asterisk script added for easy Asterisk 23 upgrade, if desired."
 read -p "Press Enter to reboot or Ctrl-C to exit..."
 /usr/local/sbin/reboot
+
+
+install_packages() {
+    apt-get install -y "$@"
+}
+
+remove_packages() {
+    apt-get purge -y "$@"
+}
+
+enable_services() {
+    systemctl enable "$@"
+}
+
+restart_services() {
+    for svc in "$@"; do
+        systemctl restart "$svc"
+    done
+}
+
+install_base_packages() {
+    log "Installing base packages"
+
+    install_packages \
+        sudo \
+        curl \
+        wget \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+}
+
+install_build_tools() {
+    log "Installing build tools"
+
+    install_packages \
+        build-essential \
+        git \
+        subversion \
+        autoconf \
+        automake \
+        libtool \
+        libtool-bin \
+        pkg-config \
+        bison \
+        flex
+}
+
+install_asterisk_dependencies() {
+    log "Installing Asterisk dependencies"
+
+    install_packages \
+        libssl-dev \
+        libxml2-dev \
+        libsqlite3-dev \
+        libjansson-dev \
+        uuid-dev \
+        libedit-dev \
+        libcurl4-openssl-dev \
+        libicu-dev \
+        libsrtp2-dev \
+        libspandsp-dev \
+        libical-dev \
+        libneon27-dev \
+        unixodbc-dev \
+        odbc-mariadb
+}
+
+install_asterisk_build_packages() {
+    install_packages \
+        libnewt-dev \
+        libncurses5-dev \
+        libncurses-dev \
+        libxml2-dev \
+        default-libmysqlclient-dev \
+        libedit-dev \
+        unixodbc
+}
+
+install_media_packages() {
+    log "Installing media packages"
+
+    install_packages \
+        ffmpeg \
+        lame \
+        mpg123 \
+        sox \
+        libasound2-dev \
+        libogg-dev \
+        libvorbis-dev
+}
+
+install_web_stack() {
+    log "Installing Apache and MariaDB"
+
+    install_packages \
+        apache2 \
+        mariadb-server \
+        mariadb-client \
+        openssh-server
+}
+install_php_stack() {
+    log "Installing PHP"
+
+    install_packages \
+        php8.2 \
+        php8.2-cli \
+        php8.2-common \
+        php8.2-fpm \
+        php8.2-curl \
+        php8.2-mysql \
+        php8.2-gd \
+        php8.2-mbstring \
+        php8.2-intl \
+        php8.2-xml \
+        php8.2-zip \
+        php8.2-soap \
+        php8.2-bcmath \
+        php8.2-opcache \
+        php8.2-imagick \
+        php8.2-redis \
+        php8.2-memcached \
+        php-pear
+
+    a2enmod proxy_fcgi setenvif
+    a2enconf php8.2-fpm
+
+    enable_services php8.2-fpm
+}
+install_security_tools() {
+    log "Installing security tools"
+
+    install_packages \
+        fail2ban \
+        iptables \
+        iptables-persistent \
+        ipset \
+        knockd
+}
+
+install_pbx_utilities() {
+    log "Installing PBX utilities"
+
+    install_packages \
+        htop \
+        sngrep \
+        vim \
+        nano \
+        expect \
+        dialog \
+        net-tools
+}
+install_python() {
+    log "Installing Python"
+
+    install_packages \
+        python3 \
+        python3-pip \
+        python-dev-is-python3
+}
+install_vpn_packages() {
+    install_packages openvpn
+}
+install_redis_packages() {
+    install_packages \
+        redis-server \
+        redis-tools
+}
+install_database_utilities() {
+    install_packages \
+        sqlite3 \
+        uuid
+}
+install_messaging_packages() {
+    install_packages \
+        postfix \
+        mailutils
+}
+install_utility_packages() {
+    install_packages \
+    jq \
+    cron
+}
+install_apache_extras() {
+    install_packages \
+        libapache2-mod-fcgid
+}
+install_media_packages() {
+    install_packages \
+        ghostscript \
+        libtiff-tools \
+        libsox-fmt-all
+}
+install_webmin_packages() {
+    install_packages webmin
+}
+install_nodejs_packages() {
+    install_packages nodejs
+}
