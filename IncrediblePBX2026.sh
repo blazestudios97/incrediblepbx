@@ -1,8 +1,12 @@
 #!/bin/bash
+# IncrediblePBX Installer - Copyright (C) 2026, Tom Ray / Blaze Studios, tom.ray@blazestudios.com
+# This is a heavy rewrite of the original IncrediblePBX installer. Many portions have been removed/replaced.
+# All previous copyrights intact.
+
 # Incredible PBX Copyright (C) 2005-2025, Ward Mundy & Associates LLC.
 # This program installs Asterisk, Incredible PBX and GUI, and utilities.
 # All programs copyrighted and licensed by their respective companies.
-#
+# 
 # Portions Copyright (C) 1999-2022, Digium, Inc.
 # Portions Copyright (C) 2005-2025, Sangoma Technologies, Inc.
 # Portions Copyright (C) 2005-2025, Ward Mundy & Associates LLC
@@ -192,7 +196,7 @@ else
 fi
 contrib/scripts/get_mp3_source.sh
 contrib/scripts/install_prereq install
-#wget http://incrediblepbx.com/menuselect-incredible18-debian10.tar.gz
+
 wget http://incrediblepbx.com/menuselect-incredible2025.tar.gz
 tar zxvf menuselect-incredible*
 rm -rf menuselect-incredible*
