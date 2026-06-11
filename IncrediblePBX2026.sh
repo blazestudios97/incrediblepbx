@@ -47,6 +47,9 @@ echo "nameserver 1.1.1.1" >> /etc/resolv.conf
 echo "nameserver 4.4.4.4" >> /etc/resolv.conf
 
 clear
+MyPick=22
+astVersion=22
+fpbxVersion=17
 temp=true
 while $temp; do
    # Prompt the user for input
@@ -56,11 +59,11 @@ while $temp; do
         case "$choice" in
             [Yy]* )
                 temp=false
-		MyPick=23
+		        astVersion=23
                 ;;
             [Nn]* )
                 temp=false
-		MyPick=22
+		        astVersion=22
                 ;;
             * )
                 echo "Invalid input. Please enter 'y' for yes or 'n' for no."
@@ -68,7 +71,7 @@ while $temp; do
         esac
 done
 clear
-MyPick=22
+
 echo "FreePBX does not yet support Asterisk 23. Asterisk $MyPick will be installed..."
 
 
@@ -127,43 +130,31 @@ EOF
 apt-get update -y 
 
 install_build_tools
-
 install_asterisk_dependencies
-
 install_media_packages
 install_web_stack
 install_php_stack
 install_security_tools
 install_pbx_utilities
 install_python
-
-install_vpn_packages
 install_database_utilities
 install_messaging_packages
 install_utility_packages
 install_apache_extras 
 install_media_packages
-install_webmin_packages
 install_nodejs_packages
 
-a2enmod proxy_fcgi setenvif
-a2enconf php8.2-fpm
-systemctl enable --now php8.2-fpm
-systemctl restart apache2
+install_webmin_packages
+install_vpn_packages
 
-apt-get -y purge php8.1 php8.3
-rm -rf /etc/php/8.1 /etc/php/8.3
-a2enmod php8.2
-update-alternatives --set php /usr/bin/php8.2
-systemctl restart apache2
+
 
 # Generate a random 24-character password using /dev/urandom
 MYSQL_ROOT_PASS=$(tr -dc 'A-Za-z0-9!@#$%^&*()_+' < /dev/urandom | head -c 24)
 
 ## Install Webmin ##
 
-sed -i 's|10000|9001|g' /etc/webmin/miniserv.conf
-systemctl restart webmin
+
 systemctl restart apache2
 
 
@@ -173,141 +164,37 @@ set hlsearch
 set mouse=r" > /root/.vimrc
 
 cd /usr/src
-wget http://incrediblepbx.com/iksemel-1.4.tar.gz
-tar zxvf iksemel-1.4.tar.gz
-cd iksemel-1.4
-./configure --prefix=/usr --with-libgnutls-prefix=/usr
-make
-make check
-make install
-echo "/usr/local/lib" > /etc/ld.so.conf.d/iksemel.conf
-ldconfig
-cd /usr/src
-mv *.tar.gz /tmp
 
-if [[ "$MyPick" == "22" ]]; then
- wget http://downloads.asterisk.org/pub/telephony/asterisk/asterisk-22-current.tar.gz
- tar xvf asterisk-22-current.tar.gz
- cd asterisk-22*/
-else
- wget http://downloads.asterisk.org/pub/telephony/asterisk/asterisk-23-current.tar.gz
- tar xvf asterisk-23-current.tar.gz
- cd asterisk-23*/
-fi
-contrib/scripts/get_mp3_source.sh
-contrib/scripts/install_prereq install
+# Install Asterisk 
+install_setup_asterisk
 
-wget http://incrediblepbx.com/menuselect-incredible2025.tar.gz
-tar zxvf menuselect-incredible*
-rm -rf menuselect-incredible*
-CFLAGS='-DENABLE_SRTP_AES_256 -DENABLE_SRTP_AES_GCM' 
-./configure --with-pjproject-bundled --with-jansson-bundled
-make menuselect.makeopts
- menuselect/menuselect --enable-category MENUSELECT_ADDONS menuselect.makeopts
- menuselect/menuselect --enable-category MENUSELECT_CODECS menuselect.makeopts
- menuselect/menuselect --disable-category MENUSELECT_TESTS menuselect.makeopts
- menuselect/menuselect --enable codec_opus menuselect.makeopts
- menuselect/menuselect --enable codec_silk menuselect.makeopts
- menuselect/menuselect --enable codec_siren7 menuselect.makeopts
- menuselect/menuselect --enable codec_siren14 menuselect.makeopts
- menuselect/menuselect --enable codec_g729a menuselect.makeopts
-make menuselect.makeopts
-make
-make install
-make samples
-make config
-ldconfig
+install -m 644 files/odbc/odbcinst.ini /etc/odbcinst.ini
+install -m 644 files/odbc/odbc.ini /etc/odbc.ini
 
-groupadd asterisk
-useradd -r -d /var/lib/asterisk -g asterisk asterisk
-usermod -aG audio,dialout asterisk
-chown -R asterisk:asterisk /etc/asterisk
-chown -R asterisk:asterisk /var/{lib,log,spool}/asterisk
-chown -R asterisk:asterisk /usr/lib64/asterisk
-
-sed -i 's|#AST_USER|AST_USER|' /etc/default/asterisk
-sed -i 's|#AST_GROUP|AST_GROUP|' /etc/default/asterisk
-sed -i 's|;runuser|runuser|' /etc/asterisk/asterisk.conf
-sed -i 's|;rungroup|rungroup|' /etc/asterisk/asterisk.conf
-ldconfig
 
 systemctl restart asterisk
 
-sed -i 's/\(^upload_max_filesize = \).*/\120M/' /etc/php/8.2/apache2/php.ini
-sed -i 's/\(emory_limit = \).*/\1256M/' /etc/php/8.2/apache2/php.ini
+
 sed -i 's/^\(User\|Group\).*/\1 asterisk/' /etc/apache2/apache2.conf
 sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 a2enmod rewrite
 systemctl restart apache2
 rm /var/www/html/index.html
 
-cat <<EOF > /etc/odbcinst.ini
-[MySQL]
-Description = ODBC for MySQL (MariaDB)
-Driver = /usr/lib/x86_64-linux-gnu/odbc/libmaodbc.so
-FileUsage = 1
-EOF
-
-cat <<EOF > /etc/odbc.ini
-[MySQL-asteriskcdrdb]
-Description = MySQL connection to 'asteriskcdrdb' database
-Driver = MySQL
-Server = localhost
-Database = asteriskcdrdb
-Port = 3306
-Socket = /var/run/mysqld/mysqld.sock
-Option = 3
-EOF
-
-systemctl stop asterisk
-systemctl disable asterisk
-killall asterisk
-touch cdr.conf
 
 
 
-cd /usr/src/
 
-wget http://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz
-tar zxvf freepbx-17.0-latest.tgz
-cd /usr/src/freepbx/
-./start_asterisk start
-./install -n
-fwconsole ma installall
-fwconsole ma enablerepo standard extended unsupported
-fwconsole ma downloadinstall superfecta queueprio miscdests miscapps outcnam dynroute extensionsettings disa allowlist
-fwconsole ma remove firewall synologyabb
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
-#fwconsole ma install incrediblepbx
-
-echo "Now downloading and restoring FreePBX backup of core IncrediblePBX system."
-cd /tmp
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
-fwconsole backup --restore /tmp/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
-rm 20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
-
-fwconsole reload
-fwconsole restart
-
-cat <<EOF > /etc/systemd/system/freepbx.service
-[Unit]
-Description=FreePBX VoIP Server
-After=mariadb.service
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/sbin/fwconsole start -q
-ExecStop=/usr/sbin/fwconsole stop -q
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable freepbx
-
-mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'passw0rd';"
+install_setup_freepbx
 
 
+
+
+
+mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket;"
+mysql -u root -e "FLUSH PRIVILEGES;"
+
+install -m 644 files/apache/httpdconf/incrediblepbx.conf /etc/apache2/conf-available/incrediblepbx.conf
 echo "
 <Directory /var/www/html/admin/licenses>
 	Options Indexes FollowSymLinks
@@ -317,39 +204,29 @@ echo "
 " >> /etc/apache2/apache2.conf
 systemctl restart apache2
 
-fwconsole setting HTTPTLSBINDADDRESS 127.0.0.1
-fwconsole setting HTTPBINDADDRESS 127.0.0.1
-A=$SRANDOM$SRANDOM$SRANDOM$SRANDOM
-B=${A:1:15}
-fwconsole setting FPBX_ARI_USER $B
-A=$SRANDOM$SRANDOM$SRANDOM$SRANDOM
-C=${A:0:30}
-fwconsole setting FPBX_ARI_PASSWORD $C
+
 rm /tmp/*
 
-mysql -u root -ppassw0rd asterisk -e "update freepbx_settings SET value = '1' where keyword='CDR_BATCH_ENABLE';"
-mysql -u root -ppassw0rd asterisk -e "update admin SET value = 'true' where variable='need_reload';"
 
 chmod +x /usr/bin/python3.11
-asterisk -rx "database put blacklist dest app-blackhole,no-service,1"
+
 #IPtables Setup
 cd /root
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
 
-#cd /etc/init.d
-wget http://incrediblepbx.com/iptables-persistent-U.tar.gz
-tar zxvf iptables-persistent-U.tar.gz
-rm iptables-persistent-U.tar.gz
-cd /root
 
-# server IP address is?
-serverip=`ifconfig | grep "inet " | head -1 | cut -f 2 -d ":" | tr -s " " | cut -f 3 -d " "`
-# user IP address while logged into SSH is?
-userip=`echo $SSH_CONNECTION | cut -f 1 -d " "`
-# public IP address in case we're on private LAN
-#publicip=`curl -s -S --user-agent "Mozilla/4.0" http://myip.incrediblepbx.com | awk 'NR==2'`
-publicip=`curl https://ipinfo.io/ip`
+# Local server IP (outbound interface)
+serverip=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+# SSH client IP
+userip=${SSH_CLIENT%% *}
+# Public IP (fallback chain)
+publicip=$(
+  curl -4 -s https://api.ipify.org ||
+  curl -4 -s https://ifconfig.me ||
+  curl -4 -s https://checkip.amazonaws.com
+)
+
 # WhiteList all of them by replacing 8.8.4.4 and 8.8.8.8 and 74.86.213.25 entries
 cp /etc/iptables/rules.v4 /etc/iptables/rules.v4.orig
 cd /etc/iptables
@@ -413,21 +290,7 @@ systemctl start fail2ban
 # remove CentOS fax installer
 rm -f /root/incrediblefax*
 
-### Install Asteridex for FreePBX-17 ###
-cd /
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/asteridex17.tar.gz -O asteridex17.tar.gz
-tar zxvf asteridex17.tar.gz
-rm -f asteridex17.tar.gz
-cd /var/www/html/asteridex17/mysql
-./loadmysql.sh
-cd /var/www/html/admin/modules
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
-tar zxvf incrediblepbx-17.0.0.tgz
-cd /root
-fwconsole ma install asteridex
-fwconsole ma downloadinstall https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/IncrediblePBX-Branding-Module/incrediblepbx-17.0.0.tgz
-./sig-fix
-./sig-fix
+
 
 # CentOS-like color scheme for ls
 echo "export LS_OPTIONS='--color=auto'
@@ -514,7 +377,7 @@ wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/IncrediblePBX2027-Debian11/pbxst
 mv pbxstatus-2027 pbxstatus
 chmod +x pbxstatus
 
- mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'passw0rd';"
+ 
  sed -i 's|mysqld|mariadbd|' /usr/local/sbin/pbxstatus
  systemctl restart apache2
  systemctl restart mysqld
@@ -541,17 +404,8 @@ if [ -z "$test" ]; then
  fi
 fi
 
-echo "[options]" > /etc/knockd.conf
-echo "       logfile = /var/log/knockd.log" >> /etc/knockd.conf
-echo "" >> /etc/knockd.conf
-echo "[opencloseALL]" >> /etc/knockd.conf
-echo "        sequence      = 7:udp,8:udp,9:udp" >> /etc/knockd.conf
-echo "        seq_timeout   = 15" >> /etc/knockd.conf
-echo "        tcpflags      = syn" >> /etc/knockd.conf
-echo "        start_command = /usr/sbin/iptables -I INPUT -s %IP% -j ACCEPT" >> /etc/knockd.conf
-echo "        cmd_timeout   = 3600" >> /etc/knockd.conf
-echo "        stop_command  = /usr/sbin/iptables -D INPUT -s %IP% -j ACCEPT" >> /etc/knockd.conf
-chmod 640 /etc/knockd.conf
+
+install -m 640 files/knockd/knockd.conf /etc/knockd.conf
 # randomize ports here
 lowest=6001
 highest=9950
@@ -734,8 +588,7 @@ apt-get update
 fwconsole reload
 
 # new bug fixes for Debian 13
-sed -i 's|www-data|asterisk|' /etc/php/8.2/fpm/pool.d/www.conf
-systemctl restart php8.2-fpm.service
+
 fwconsole reload --verbose
 sed -i 's|2025|2026|' /etc/pbx/.version
 sed -i 's|SendMail| Postfix|' /usr/local/sbin/pbxstatus
@@ -759,9 +612,7 @@ chattr +i /etc/rc.local
 systemctl restart apache2
 fwconsole ma refreshsignatures
 systemctl daemon-reload
-sed -i 's|128M|256M|' /etc/php/8.2/fpm/php.ini
-systemctl restart php8.2-fpm.service
-systemctl enable php8.2-fpm.service
+
 mysql -u root -ppassw0rd asterisk -e "DELETE FROM modules WHERE modulename = 'restart';"
 mysql -u root -ppassw0rd asterisk -e "DELETE FROM module_xml WHERE id = 'restart';"
 fwconsole chown
@@ -797,7 +648,7 @@ restart_services() {
 
 install_base_packages() {
     log "Installing base packages"
-
+    
     install_packages \
         sudo \
         curl \
@@ -878,6 +729,8 @@ install_web_stack() {
 }
 install_php_stack() {
     log "Installing PHP"
+    remove_packages php8.1 php8.3
+    rm -rf /etc/php/8.1 /etc/php/8.3
 
     install_packages \
         php8.2 \
@@ -898,11 +751,26 @@ install_php_stack() {
         php8.2-redis \
         php8.2-memcached \
         php-pear
-
+    
+    install -m 644 files/php/php-fpm/www.conf /etc/php/8.2/fpm/pool.d/www.conf
+    install -m 644 files/php/php-fpm/override.conf /etc/systemd/system/php8.2-fpm.service.d/override.conf
+    
+    systemctl daemon-reload
+    
     a2enmod proxy_fcgi setenvif
     a2enconf php8.2-fpm
+    update-alternatives --set php /usr/bin/php8.2
 
-    enable_services php8.2-fpm
+    sed -i 's/^memory_limit *= *.*/memory_limit = 256M/' /etc/php/8.2/fpm/php.ini
+    sed -i 's/^upload_max_filesize *= *.*/upload_max_filesize = 20M/' /etc/php/8.2/fpm/php.ini
+    
+    sed -i 's/^memory_limit *= *.*/memory_limit = 256M/' /etc/php/8.2/cli/php.ini
+    sed -i 's/^upload_max_filesize *= *.*/upload_max_filesize = 20M/' /etc/php/8.2/cli/php.ini
+    
+    systemctl enable --now php8.2-fpm
+
+    systemctl restart apache2
+    
 }
 install_security_tools() {
     log "Installing security tools"
@@ -970,7 +838,127 @@ install_media_packages() {
 }
 install_webmin_packages() {
     install_packages webmin
+    sed -i 's|10000|9001|g' /etc/webmin/miniserv.conf
+    systemctl restart webmin
 }
 install_nodejs_packages() {
     install_packages nodejs
+}
+
+# Install Selected Asterisk Version
+install_setup_asterisk() {
+    cd /usr/src
+    if [[ "$astVersion" == "" ]]; then
+        astVersion=22
+    fi
+    wget "https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-$astVersion-current.tar.gz"
+    tar xvf "asterisk-$astVersion-current.tar.gz"
+    cd "asterisk-$astVersion"*/
+    
+    contrib/scripts/get_mp3_source.sh
+    contrib/scripts/install_prereq install
+
+    wget http://incrediblepbx.com/menuselect-incredible2025.tar.gz
+    tar zxvf menuselect-incredible*
+    rm -rf menuselect-incredible*
+
+    export CFLAGS='-DENABLE_SRTP_AES_256 -DENABLE_SRTP_AES_GCM' 
+    ./configure --with-pjproject-bundled --with-jansson-bundled
+    make menuselect.makeopts
+    
+    menuselect/menuselect --enable-category MENUSELECT_ADDONS menuselect.makeopts
+    menuselect/menuselect --enable-category MENUSELECT_CODECS menuselect.makeopts
+    menuselect/menuselect --disable-category MENUSELECT_TESTS menuselect.makeopts
+    menuselect/menuselect --enable codec_opus menuselect.makeopts
+    menuselect/menuselect --enable codec_silk menuselect.makeopts
+    menuselect/menuselect --enable codec_siren7 menuselect.makeopts
+    menuselect/menuselect --enable codec_siren14 menuselect.makeopts
+    menuselect/menuselect --enable codec_g729a menuselect.makeopts
+    make menuselect.makeopts
+    
+    make
+    make install
+    make samples
+    make config
+    ldconfig
+
+    groupadd asterisk
+    useradd -r -d /var/lib/asterisk -g asterisk asterisk
+    usermod -aG audio,dialout asterisk
+    chown -R asterisk:asterisk /etc/asterisk
+    chown -R asterisk:asterisk /var/{lib,log,spool}/asterisk
+
+
+    sed -i 's|#AST_USER|AST_USER|' /etc/default/asterisk
+    sed -i 's|#AST_GROUP|AST_GROUP|' /etc/default/asterisk
+    sed -i 's|;runuser|runuser|' /etc/asterisk/asterisk.conf
+    sed -i 's|;rungroup|rungroup|' /etc/asterisk/asterisk.conf
+    ldconfig
+    systemctl stop asterisk
+    systemctl disable asterisk
+    killall asterisk
+    touch cdr.conf
+}
+
+install_setup_freepbx() {
+
+
+    cd /usr/src/
+
+    wget "https://mirror.freepbx.org/modules/packages/freepbx/freepbx-$fpbxVersion.0-latest.tgz"
+    tar zxvf "freepbx-$fpbxVersion.0-latest.tgz"
+    cd /usr/src/freepbx/
+    ./start_asterisk start
+    ./install -n
+    fwconsole ma installall
+    fwconsole ma enablerepo standard extended unsupported
+    fwconsole ma downloadinstall superfecta queueprio miscdests miscapps outcnam dynroute extensionsettings disa allowlist
+    fwconsole ma remove firewall synologyabb
+
+    
+fwconsole reload
+fwconsole restart
+install -m 644 files/systemd/freepbx.service /etc/systemd/system/freepbx.service
+    
+systemctl daemon-reload
+systemctl enable freepbx
+fwconsole setting HTTPTLSBINDADDRESS 127.0.0.1
+fwconsole setting HTTPBINDADDRESS 127.0.0.1
+
+ARI_USER=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)
+ARI_PASS=$(openssl rand -base64 32)
+
+fwconsole setting FPBX_ARI_USER "$ARI_USER"
+fwconsole setting FPBX_ARI_PASSWORD "$ARI_PASS"
+asterisk -rx "database put blacklist dest app-blackhole,no-service,1"
+}
+install_incrediblepbx() {
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
+    #fwconsole ma install incrediblepbx
+
+echo "Now downloading and restoring FreePBX backup of core IncrediblePBX system."
+cd /tmp
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
+fwconsole backup --restore /tmp/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
+rm 20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
+
+mysql -u root -ppassw0rd asterisk -e "update freepbx_settings SET value = '1' where keyword='CDR_BATCH_ENABLE';"
+mysql -u root -ppassw0rd asterisk -e "update admin SET value = 'true' where variable='need_reload';"
+
+### Install Asteridex for FreePBX-17 ###
+cd /
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/asteridex17.tar.gz -O asteridex17.tar.gz
+tar zxvf asteridex17.tar.gz
+rm -f asteridex17.tar.gz
+cd /var/www/html/asteridex17/mysql
+./loadmysql.sh
+cd /var/www/html/admin/modules
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
+tar zxvf incrediblepbx-17.0.0.tgz
+cd /root
+fwconsole ma install asteridex
+fwconsole ma downloadinstall https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/IncrediblePBX-Branding-Module/incrediblepbx-17.0.0.tgz
+./sig-fix
+./sig-fix
+
 }
