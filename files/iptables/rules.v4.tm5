@@ -4,6 +4,7 @@
 :OUTPUT ACCEPT [0:0]
 :trusted-hosts - [0:0]
 :trusted-providers - [0:0]
+:limited-hosts - [0:0]
 -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 -A INPUT -i lo -j ACCEPT
 -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
@@ -15,8 +16,8 @@
 -A INPUT -p tcp -m multiport --dports 81,4443,8001,8003 -j trusted-hosts
 -A INPUT -p udp --dport 5060:5069 -j trusted-providers
 -A INPUT -p udp --dport 4569 -j trusted-providers
--A INPUT -p udp --dport 1194 -j -m comment --comment "OpenVPN UDP Handshake" ACCEPT
--A INPUT -p tcp --dport 1194 -j -m comment --comment "OpenVPN TCP Handshake" ACCEPT
+-A INPUT -p udp --dport 1194 -j -m comment --comment "OpenVPN UDP Handshake" -j ACCEPT
+-A INPUT -p tcp --dport 1194 -j -m comment --comment "OpenVPN TCP Handshake" -j ACCEPT
 -A INPUT -i tun+ -p tcp --dport 22 -j ACCEPT
 -A INPUT -i tun+ -p tcp --dport 443 -j ACCEPT
 -A INPUT -i tun+ -p udp --dport 5060:5069 -j ACCEPT

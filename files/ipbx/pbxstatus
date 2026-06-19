@@ -3,104 +3,104 @@ DN="\Z1\ZrDN\Z0\ZR";
 UP="\Zr\Z2UP\Z0\ZR";
 NA="\Z8\ZrNA\Z0\ZR";
 if hostname -I > /etc/hostip; then
-   badaddr=`cat /etc/hostip | cut -f 4 -d " "`
-   realaddr=`cat /etc/hostip`
-   _IP="Priv IP:  ${realaddr//$badaddr/}"
-#    _IP=" Private IP: `cat /etc/hostip`"
-_IP="LAN IP: `ifconfig | grep "inet " | sed '/127/d' | tr -s ' ' | cut -f 3 -d " " | tr '\n' ' '`"
-  if [ -f "/etc/pbx/.phone" ]; then
-    _PHONE=`cat /etc/pbx/.phone`
-  else
-    _PHONE=" "
-  fi
-#    _PUBLIC="Public Info: `dig TXT +short o-o.myaddr.l.google.com @ns1.google.com ` $_PHONE"
-_PUBLIC="Public: `curl ifconfig.co` $_PHONE"
+
+    _IP="LAN IP: $(hostname -I | xargs)"
+
+    if [ -f "/etc/pbx/.phone" ]; then
+        _PHONE=$(cat /etc/pbx/.phone)
+    else
+        _PHONE=""
+    fi
+
+    _PUBLIC="Public: $(curl -4 -s https://ifconfig.co) $_PHONE"
 else
-   _IP=""
-   _PUBLIC=""
-_PUBLIC="Public: `curl ifconfig.co` $_PHONE"
+    _IP=""
+    _PUBLIC="Public: $(curl -4 -s https://ifconfig.co) $_PHONE"
 fi
-version=`cat /etc/pbx/.version`
-phpversion=`php -v | head -n 1 | head -c 7 | cut -f 2 -d " "`
-astversion=`asterisk -rx "core show version" | grep -m 2 ^ | tail -1 | cut -f 2 -d " "`
-fpbxversion=`cat /var/www/html/admin/modules/core/module.xml | grep version | head -n 1 | cut -f 2 -d ">" | cut -f 1 -d "<"`
-test=`ps aux | grep -c /usr/sbin/asterisk`
-#OSrelease="*Debian `cat /etc/os-release | grep "VERSION=" | cut -f 2 -d "=" | sed 's|"||g' | sed 's| LTS||' | sed 's|(||' | sed 's|)||'`*"
-OSrelease=`cat /etc/os-release | grep VERSION | grep "(" | cut -f 2 -d "(" | cut -f 1 -d ")"`
-if [ "$OSrelease" = "bullseye" ]; then
- OSrelease="Debian Bullseye"
-fi
-if [ "$test" -lt "2" ]; then
- asterisk="$DN"
+
+version=$(cat /etc/pbx/.version)
+
+phpversion=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+
+astversion=$(asterisk -rx "core show version" | awk '/Asterisk/{print $2; exit}')
+
+fpbxversion=$(grep -m1 '<version>' /var/www/html/admin/modules/core/module.xml | sed 's|.*<version>\(.*\)</version>.*|\1|')
+
+
+
+source /etc/os-release
+OSrelease="$PRETTY_NAME"
+
+
+service_status() {
+    local service="$1"
+
+    if systemctl is-active --quiet "$service"; then
+        echo "$UP"
+    else
+        echo "$DN"
+    fi
+}
+
+if asterisk -rx "core show uptime" >/dev/null 2>&1; then
+    asterisk="$UP"
 else
- asterisk="$UP"
+    asterisk="$DN"
 fi
-test=`ps aux | grep -c /usr/sbin/apache2`
-if [ "$test" -lt "2" ]; then
- apache="$DN"
-else
- apache="$UP"
-fi
-test=`ps aux | grep -c mysql`
-if [ "$test" -lt "2" ]; then
- mysql="$DN"
-else
- mysql="$UP"
-fi
-test=`ps aux | grep -c webmin`
-if [ "$test" -lt "2" ]; then
- webmin="$DN"
-else
- webmin="$UP"
-fi
-test=`ps aux | grep -c sshd`
-if [ "$test" -lt "2" ]; then
- ssh="$DN"
-else
- ssh="$UP"
-fi
-test=`ps aux | grep -c sendmail`
-if [ "$test" -lt "2" ]; then
- sendmail="$DN"
-else
- sendmail="$UP"
-fi
-test=`ps aux | grep -c fail2ban`
-if [ "$test" -lt "2" ]; then
- fail2ban="$DN"
-else
- fail2ban="$UP"
-fi
+apache=$(service_status apache2)
+mysql=$(service_status mariadb)
+ssh=$(service_status ssh)
+fail2ban=$(service_status fail2ban)
+webmin=$(service_status webmin)
+knockd=$(service_status knockd)
+knockd=$(service_status postfix)
+
+
+
+
+
+
+
 test=`ps aux | grep -c ntpd`
 if [ "$test" -lt "2" ]; then
  ntpd="$DN"
 else
  ntpd="$UP"
 fi
-test=`sudo iptables -nL | grep -c DROP`
-if [ "$test" -lt "1" ]; then
- IPtables="$DN"
+#iptables status
+if iptables -S | grep -q '^-P INPUT DROP'; then
+    IPtables="$UP"
 else
- IPtables="$UP"
+    IPtables="$DN"
 fi
-IPPORT=`ifconfig|gawk '/flags/{print $1}'|cut -f 1 -d ":"|tail -1`
-test=`ifconfig | grep venet0`
-if [[ !  -z  $test  ]]; then
-IPPORT='venet0'
-eth0="$UP"
-else
-# IPPORT=`ifconfig | head -n 1 | cut -f 1 -d ":"`
- IPPORT=`ifconfig |tail -n 8 | head -n 1 | cut -f 1 -d ":"`
- test=`/sbin/ifconfig | grep -c inet`
- if [ "$test" -lt "1" ]; then
-  eth0="$DN"
- else
-  eth0="$UP"
- fi
-fi
-RAM=`free | grep -m 2 ^ | tr -s " " | tail -1 | cut -f 4 -d " "`
-DISK=`df -h | grep /dev/ | tr -s " " | head -n 1 | cut -f 4 -d " "`
 
+IPPORT=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+# fallback for weird VPS setups (like venet)
+if [ -z "$IPPORT" ]; then
+    IPPORT=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n 1)
+fi
+# detect venet explicitly (your old special-case)
+if ip link show venet0 >/dev/null 2>&1; then
+    IPPORT="venet0"
+fi
+
+if ip -4 addr show dev "$IPPORT" 2>/dev/null | grep -q inet; then
+    eth0="$UP"
+else
+    eth0="$DN"
+fi
+
+#RAM=`free | grep -m 2 ^ | tr -s " " | tail -1 | cut -f 4 -d " "`
+RAM=$(free -h | awk '/Mem:/ {print $7}')
+
+#DISK=`df -h | grep /dev/ | tr -s " " | head -n 1 | cut -f 4 -d " "`
+DISK=$(df -h / | awk 'NR==2 {print $4}')
+
+if pgrep -f "node.*index\.js" >/dev/null 2>&1; then
+    gvoauth="$UP"
+else
+    gvoauth="$DN"
+fi
 test=`ps aux | grep -c "node/index.js"`
 if [ "$test" -gt "0" ]; then
  gvoauth="$NA"
@@ -135,26 +135,20 @@ else
  iaxmodem="$UP"
 fi
 
-test=`ps aux | grep -c knockd`
-if [ "$test" -lt "2" ]; then
- knockd="$DN"
-else
- knockd="$UP"
-fi
 
-#TITLE="Incredible PBX $version for Debian `cat /etc/debian_version` Buster"
-TITLE="Incredible PBX $version for Ubuntu 22.04"
-TITLE="Incredible PBX $version for "`cat /etc/os-release | grep PRETTY_NAME | cut -f 2 -d '"' | cut -f 1 -d "("`
+
+TITLE="Incredible PBX $version for $OSrelease"
 
 NOW=`date`
 
-TOP="\n\ZbAsterisk\ZB: $asterisk  \ZbApache/$phpversion\ZB: $apache  \Zb  MySQL\ZB: $mysql\n\ZbSendMail\ZB: $sendmail    \ZbIPtables\ZB: $IPtables      \ZbSSH\ZB: $ssh\n\ZbLAN\ZB: $eth0    \ZbFail2Ban\ZB: $fail2ban   \ZbWebmin\ZB: $webmin\n\n\Zr\Z4\Zb"
-TOP="\n\ZbAsterisk\ZB: $asterisk  \ZbApache/$phpversion\ZB: $apache  \Zb  MySQL\ZB: $mysql\n\ZbSendMail\ZB: $sendmail    \ZbIPtables\ZB: $IPtables	\Zb     SSH\ZB: $ssh\n\ZbLAN port\ZB: $eth0    \ZbFail2Ban\ZB: $fail2ban   \ZbWebmin\ZB: $webmin\n\ZbUCP Dmon\ZB: $gvoauth  \Zb PortKnock\ZB: $knockd  \ZbOpenVPN\ZB: $nrclient\n\Zb\n\Zr\Z4\Zb"
-if [ -d "/root/gvsip-naf" ]; then
- TOP="\n\ZbAsterisk\ZB: $asterisk  \ZbApache/$phpversion\ZB: $apache  \Zb  MySQL\ZB: $mysql\n\ZbSendMail\ZB: $sendmail    \ZbIPtables\ZB: $IPtables      \ZbSSH\ZB: $ssh\n\ZbLAN port\ZB: $eth0    \ZbFail2Ban\ZB: $fail2ban   \ZbWebmin\ZB: $webmin\n\ZbGVSIPNAF\ZB: $gvoauth  \Zb PortKnock\ZB: $knockd   \ZbNR VPN\ZB: $nrclient\n\ZbFaxGetty\ZB: $faxgetty  \Zb IAX Modem\ZB: $iaxmodem  \ZbHylaFax\ZB: $hfax\n\n\Zr\Z4\Zb"
-fi
+TOP="\n\
+\ZbAsterisk\ZB: $asterisk  \ZbApache/$phpversion\ZB: $apache  \Zb  MariaDB\ZB: $mysql\n\
+\ZbPostfix\ZB: $sendmail    \ZbIPtables\ZB: $IPtables	\Zb     SSH\ZB: $ssh\n\ 
+\ZbLAN port\ZB: $eth0    \ZbFail2Ban\ZB: $fail2ban   \ZbWebmin\ZB: $webmin\n\
+\ZbUCP Dmon\ZB: $gvoauth  \Zb PortKnock\ZB: $knockd  \ZbOpenVPN\ZB: $nrclient\n\Zb\n\Zr\Z4\Zb"
+
 MID="RAM\ZB:$RAM  $OSrelease  \ZbDisk\ZB:$DISK \ZR\Z0\n\n\Z5\ZB"
-BOT="Asterisk $astversion   Incredible GUI $fpbxversion\ZB\Z0\n\n\Zb$_IP\n\n$_PUBLIC\ZB\n\n\ZbSystem Time: $NOW\Zb"
+BOT="Asterisk $astversion  Incredible GUI $fpbxversion\ZB\Z0\n\n\Zb$_IP\n\n$_PUBLIC\ZB\n\n\ZbSystem Time: $NOW\Zb"
 
 MSGLEN=`echo ${#MID}`
 

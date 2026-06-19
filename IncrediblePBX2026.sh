@@ -44,7 +44,6 @@ sysctl -w net.ipv6.conf.lo.disable_ipv6=1
 
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /etc/resolv.conf
-echo "nameserver 4.4.4.4" >> /etc/resolv.conf
 
 clear
 MyPick=22
@@ -149,10 +148,8 @@ install_vpn_packages
 
 
 
-# Generate a random 24-character password using /dev/urandom
-MYSQL_ROOT_PASS=$(tr -dc 'A-Za-z0-9!@#$%^&*()_+' < /dev/urandom | head -c 24)
 
-## Install Webmin ##
+
 
 
 systemctl restart apache2
@@ -174,13 +171,8 @@ install -m 644 files/odbc/odbc.ini /etc/odbc.ini
 
 systemctl restart asterisk
 
-
-sed -i 's/^\(User\|Group\).*/\1 asterisk/' /etc/apache2/apache2.conf
-sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
-a2enmod rewrite
-systemctl restart apache2
-rm /var/www/html/index.html
-
+setup_apache
+# Install and setup FreePBX
 install_setup_freepbx
 
 mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket;"
@@ -199,8 +191,9 @@ systemctl restart apache2
 
 rm /tmp/*
 
+# Setup Firewall - iptables
+setup_firewall
 
-chmod +x /usr/bin/python3.11
 
 #IPtables Setup
 cd /root
@@ -244,21 +237,10 @@ systemctl restart iptables
 
 
 
-cd /usr/local/sbin
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/images/pbxstatus-2027D
-mv pbxstatus-2027D pbxstatus
-chmod +x pbxstatus
 
 
 
-# kill all the endless Fail2Ban alerts
-sed -i 's|you@example.com|devnull@localhost|' /etc/fail2ban/jail.conf
-sed -i 's|#allowipv6 = auto|allowipv6 = no|' /etc/fail2ban/fail2ban.conf
-sed -i 's|sshd_log = %(syslog_authpriv)s|sshd_log = /var/log/sshd.log|' /etc/fail2ban/paths-common.conf
-mkdir /var/log/sshd.log
-sed -i 's|%(sshd_log)s|/var/log/sshd.log|' /etc/fail2ban/jail.conf
-#echo "sshd_backend = systemd" >> /etc/fail2ban/paths-debian.conf
-sed -i 's|fail2ban-client -x start|#fail2ban-client -x start|' /etc/fail2ban/paths-debian.conf
+
 
 systemctl enable fail2ban
 systemctl start fail2ban
@@ -273,10 +255,7 @@ eval \"\`dircolors\`\"
 alias ls='ls \$LS_OPTIONS'
 alias ll='ls -l \$LS_OPTIONS'" >> /etc/bash.bashrc
 
-cd /var/www/html/admin
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/iPBX-licenses.tar.gz
-tar zxvf iPBX-licenses.tar.gz
-rm iPBX-licenses.tar.gz
+
 
 
 # Checking for IPv6
@@ -294,9 +273,9 @@ rm iPBX-licenses.tar.gz
 iptables-save
 
 if [ -e "/usr/sbin/fwconsole" ]; then
- echo " "
+    echo " "
 else
- ln -s /var/lib/asterisk/bin/fwconsole /usr/sbin/fwconsole
+    ln -s /var/lib/asterisk/bin/fwconsole /usr/sbin/fwconsole
 fi
 
 
@@ -314,7 +293,7 @@ PATH=$PATH:$HOME/bin
 export PATH
 pbxstatus -p" > /root/.bash_profile
 
-mysql -u root -ppassw0rd asterisk -e 'UPDATE freepbx_settings SET `value` = "Latest-17" WHERE `keyword` = "MIRROR_BRAND_VERSION" LIMIT 1'
+mysql -u root asterisk -e 'UPDATE freepbx_settings SET `value` = "Latest-17" WHERE `keyword` = "MIRROR_BRAND_VERSION" LIMIT 1'
 
 systemctl restart mysqld
 fwconsole chown
@@ -335,8 +314,11 @@ wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/IncrediblePBX2027-Debian11/pbxst
 mv pbxstatus-2027 pbxstatus
 chmod +x pbxstatus
 
+cd /var/www/html/admin
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/iPBX-licenses.tar.gz
+tar zxvf iPBX-licenses.tar.gz
+rm iPBX-licenses.tar.gz
  
- sed -i 's|mysqld|mariadbd|' /usr/local/sbin/pbxstatus
  systemctl restart apache2
  systemctl restart mysqld
  sed -i 's|Bullseye|Bookworm|' /usr/local/sbin/pbxstatus
@@ -350,17 +332,6 @@ systemctl start sendmail
 ### Install knockd ###
 
 
-sed -i 's|START_KNOCKD=0|START_KNOCKD=1|' /etc/default/knockd
-test=`ifconfig | grep eth0`
-if [ -z "$test" ]; then
- test2=`ifconfig | grep wlan0`
- if [ -z "$test2" ]; then
-  devport=`ifconfig | head -n 1 | cut -f 1 -d ":"`
-  echo "KNOCKD_OPTS=\"-i $devport\"" >> /etc/default/knockd
- else
-  echo 'KNOCKD_OPTS="-i wlan0"' >> /etc/default/knockd
- fi
-fi
 
 
 
@@ -375,47 +346,37 @@ rm -f /root/*.rpm
 
 # gTTS update
 apt-get update
+install_gtts
 
 pip install --upgrade pip
 pip3 install --upgrade pip
 ln -s /usr/bin/pip3 /usr/bin/pip
 pip install gTTS
+
 cd /var/lib/asterisk/agi-bin
 wget http://incrediblepbx.com/today3.tar.gz
 tar zxvf today3.tar.gz
 rm -f today3.tar.gz
 /var/lib/asterisk/agi-bin/nv-today.php
 chown asterisk:asterisk /tmp/today.*
+
 echo "08 01 * * * asterisk /var/lib/asterisk/agi-bin/nv-today.php" >> /etc/crontab
 echo "*/10 5-22 * * * root /root/ipchecker > /dev/null 2>&1" >> /etc/crontab
 crontab /etc/crontab
 
-sed -i 's|127.0.0.1|127.0.0.1\tnoreply.incrediblepbx.com|' /etc/hosts
-echo 'noreply.incrediblepbx.com' > /etc/hostname
-hostname noreply.incrediblepbx.com
 
-## Install Faxing Prep ##
-apt-get update
+HOSTNAME="noreply.incrediblepbx.com"
+
+hostnamectl set-hostname "$HOSTNAME"
+
+if grep -q '^127\.0\.1\.1' /etc/hosts; then
+    sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOSTNAME ${HOSTNAME%%.*}/" /etc/hosts
+else
+    echo -e "127.0.1.1\t$HOSTNAME ${HOSTNAME%%.*}" >> /etc/hosts
+fi
 
 sed -i '/^\[custom-fax/,/^$/d' /etc/asterisk/extensions_custom.conf
-echo '
-[ext-group](+)
-exten => fax,1,Noop(Fax detected)
-exten -> fax,2,Goto(custom-fax-iaxmodem,s,1)
 
-[custom-fax-iaxmodem]
-exten => s,1,Answer
-exten => s,n,Wait(1)
-exten => s,n,Verbose(3,Incoming Fax)
-exten => s,n,Set(FAXEMAIL=)     ; fax email address of recipient
-exten => s,n,Set(FAXDEST=/tmp)  ; folder where faxes will be stored
-exten => s,n,Set(tempfax=${STRFTIME(,,%C%y%m%d%H%M)})
-exten => s,n,ReceiveFax(${FAXDEST}/${tempfax}.tif)
-exten => s,n,System(/usr/bin/tiff2pdf -o "${FAXDEST}/${tempfax}.pdf" "${FAXDEST}/${tempfax}.tif")
-exten => s,n,System(/usr/bin/echo "Incoming fax is attached." | /usr/bin/mail -s "Incoming FAX  Received" -A "${FAXDEST}/${tempfax}.pdf" "${FAXEMAIL}")
-exten => s,n,Hangup
-
-' >> /etc/asterisk/extensions_custom.conf
 
 ###  Add the update checker program  ###
 
@@ -445,19 +406,7 @@ touch /etc/logrotate.d/asterisk
 
 /root/admin-pw-change
 
-mysql -u root -ppassw0rd asterisk -e 'update freepbx_settings set value = 1 where keyword = "USERESMWIBLF"'
-mysql -u root -ppassw0rd asterisk -e 'update freepbx_settings set value = "Incredible PBX 2026" where keyword = "DASHBOARD_FREEPBX_BRAND"'
-echo "2025" > /etc/pbx/.version
-fwconsole reload
 
-
-
-
-cd /
-wget http://incrediblepbx.com/ipbx2024.tar.gz
-tar zxvf ipbx2024.tar.gz
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/iPBX-custom.tar.gz
-tar zxvf iPBX-custom.tar.gz
 
 
 apt-get update
@@ -466,17 +415,12 @@ fwconsole reload
 # new bug fixes for Debian 13
 
 fwconsole reload --verbose
-sed -i 's|2025|2026|' /etc/pbx/.version
-sed -i 's|SendMail| Postfix|' /usr/local/sbin/pbxstatus
-chmod 755 /var/lib/asterisk/keys/stir_shaken
-rm -rf /etc/asterisk/integration
-mkdir -p /etc/asterisk/keys/integration
-chown -R asterisk:asterisk /etc/asterisk/keys
-chmod -R 775 /etc/asterisk/keys
-apt-get update
 
-systemctl start redis-server
-systemctl enable redis-server
+
+
+
+
+
 systemctl start redis.service
 systemctl enable redis.service
 cd /
@@ -489,8 +433,8 @@ systemctl restart apache2
 fwconsole ma refreshsignatures
 systemctl daemon-reload
 
-mysql -u root -ppassw0rd asterisk -e "DELETE FROM modules WHERE modulename = 'restart';"
-mysql -u root -ppassw0rd asterisk -e "DELETE FROM module_xml WHERE id = 'restart';"
+mysql -u root asterisk -e "DELETE FROM modules WHERE modulename = 'restart';"
+mysql -u root asterisk -e "DELETE FROM module_xml WHERE id = 'restart';"
 fwconsole chown
 fwconsole reload
 fwconsole certificates --delete 1
@@ -531,7 +475,7 @@ install_base_packages() {
         wget \
         ca-certificates \
         gnupg \
-        lsb-release \
+        lsb-release
 }
 
 install_build_tools() {
@@ -656,7 +600,8 @@ install_security_tools() {
         iptables \
         iptables-persistent \
         ipset \
-        knockd
+        knockd \
+        dnsmasq
 }
 
 install_pbx_utilities() {
@@ -677,6 +622,7 @@ install_python() {
     install_packages \
         python3 \
         python3-pip \
+        pipx \
         python-dev-is-python3
 }
 install_vpn_packages() {
@@ -700,7 +646,7 @@ install_messaging_packages() {
 install_utility_packages() {
     install_packages \
         jq \
-        cron
+        cron 
 }
 install_apache_extras() {
     install_packages \
@@ -720,6 +666,8 @@ install_webmin_packages() {
 install_nodejs_packages() {
     install_packages nodejs
 }
+
+
 
 # Install Selected Asterisk Version
 install_setup_asterisk() {
@@ -840,7 +788,45 @@ fwconsole ma downloadinstall https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Incredib
 ./sig-fix
 ./sig-fix
 
+
+mysql -u root asterisk -e 'update freepbx_settings set value = "Incredible PBX 2026" where keyword = "DASHBOARD_FREEPBX_BRAND"'
+echo "2025" > /etc/pbx/.version
+fwconsole reload
+cd /
+wget http://incrediblepbx.com/ipbx2024.tar.gz
+tar zxvf ipbx2024.tar.gz
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/iPBX-custom.tar.gz
+tar zxvf iPBX-custom.tar.gz
+sed -i 's|2025|2026|' /etc/pbx/.version
 }
+setup_apache()
+{
+    sed -i 's/^\(User\|Group\).*/\1 asterisk/' /etc/apache2/apache2.conf
+    sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+    a2enmod rewrite
+    systemctl restart apache2
+    rm /var/www/html/index.html
+}
+
+install_gTTS() {
+echo "Installing gTTS..."
+    export PIPX_HOME=/opt/pipx
+    export PIPX_BIN_DIR=/usr/local/bin
+
+    if ! pipx install gTTS; then
+        echo "ERROR: Failed to install gTTS via pipx" >&2
+        exit 1
+    fi
+
+    if ! pipx list | grep -q gTTS; then
+        echo "ERROR: gTTS installation verification failed" >&2
+        exit 1
+    fi
+
+echo "gTTS installed successfully — gtts-cli available at /usr/local/bin/gtts-cli"
+
+}
+
 
 setup_rootfiles() {
 cd /
@@ -848,6 +834,21 @@ wget http://incrediblepbx.com/rootfiles-debian10.tar.gz
 tar zxvf rootfiles-debian10.tar.gz
 rm rootfiles-debian10.tar.gz
 chattr -i /root/up*
+
+cd /root
+wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/root-folder-update.tar.gz
+tar zxvf root-folder-update.tar.gz
+rm -f root-folder-update.tar.gz
+}
+
+setup_dnsmasq() {
+    systemctl disable --now systemd-resolved
+    systemctl mask systemd-resolved
+    rm -f /etc/resolv.conf
+    echo "nameserver 127.0.0.1" > /etc/resolv.conf
+    install -m 644 files/dnsmasq/00-dns.conf /etc/dnsmasq.d/00-dns.conf 
+    systemctl enable dnsmasq
+    systemctl restart dnsmasq
 }
 
 setup_knockd() {
@@ -907,21 +908,87 @@ chattr +i /etc/rc.local
 setup_firewall() {
     echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
     echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
-    
+    ipset create trusted_dyndns hash:ip timeout 3600
+    ipset create restriced_dyndns hash:ip timeout 3600
     ipset create trusted_hosts hash:ip -exist
+    ipset create restricted_hosts hash:ip -exist
     ipset create trusted_providers hash:ip -exist
 
     systemctl enable ipset-restore
-    systemctl enable --now ipset-dns-refresh.timer
+    
 }
 
 setup_fail2ban() {
-
+    install -m 644 files/fail2ban/fail2ban.local /etc/fail2ban/jail.d/fail2ban.local
+    install -m 644 files/fail2ban/defaults.local /etc/fail2ban/jail.d/defaults.local
+    install -m 644 files/fail2ban/sshd.local /etc/fail2ban/jail.d/sshd.local
+    install -m 644 files/fail2ban/asterisk.local /etc/fail2ban/jail.d/asterisk.local
 }
 
 setup_openvpn() {
-    chmod +x /etc/systemd/system/openvpn2027.service
-cp -p /root/openvpn-start /etc/openvpn-start
-systemctl enable openvpn2027.service
-systemctl restart openvpn2027.service
+    install -m 644 files/systemd/openvpn2027.service /etc/systemd/system/openvpn2027.service
+    cp -p /root/openvpn-start /etc/openvpn-start
+    systemctl enable openvpn2027.service
+    systemctl restart openvpn2027.service
 }
+
+post_install_asterisk() {
+    chmod 755 /var/lib/asterisk/keys/stir_shaken
+    rm -rf /etc/asterisk/integration
+    mkdir -p /etc/asterisk/keys/integration
+    hown -R asterisk:asterisk /etc/asterisk/keys
+    chmod -R 775 /etc/asterisk/keys
+}
+
+
+
+
+
+configure_smarthost() {
+    . /usr/local/lib/postfix-sasl.sh
+    local smtphost smtpport smtpuser provider
+
+    echo "Configure a smarthost for outbound mail? [y/N]"
+    read -r use_smarthost
+    [[ "${use_smarthost,,}" != "y" ]] && return 0
+
+    echo "Select provider:"
+    echo "  1) Gmail (smtp.gmail.com:587)"
+    echo "  2) Custom"
+    read -r provider
+
+    case "$provider" in
+        1)
+            smtphost="smtp.gmail.com"
+            smtpport="587"
+            ;;
+        2)
+            while true; do
+                echo "Host:"
+                read -r smtphost
+                _validate_host "$smtphost" && break
+            done
+
+            while true; do
+                echo "Port [587]:"
+                read -r smtpport
+                smtpport="${smtpport:-587}"
+                _validate_port "$smtpport" && break
+            done
+            ;;
+        *)
+            echo "Invalid selection." >&2
+            return 1
+            ;;
+    esac
+
+    while true; do
+        echo "Username:"
+        read -r smtpuser
+        _validate_user "$smtpuser" && break
+    done
+
+    sasl_add "$smtphost" "$smtpuser" "$smtpport"
+}
+
+configure_smarthost
