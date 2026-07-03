@@ -38,9 +38,7 @@ sed -i 's|rm -i|rm -f|' /root/.bashrc
 sed -i 's|cp -i|cp -f|' /root/.bashrc
 sed -i 's|mv -i|mv -f|' /root/.bashrc
 
-sysctl -w net.ipv6.conf.all.disable_ipv6=1
-sysctl -w net.ipv6.conf.default.disable_ipv6=1
-sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+check_configure_ipv6
 
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /etc/resolv.conf
@@ -148,7 +146,8 @@ install_vpn_packages
 
 
 
-
+mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket;"
+mysql -u root -e "FLUSH PRIVILEGES;"
 
 
 
@@ -156,9 +155,10 @@ systemctl restart apache2
 
 
 ### Set up VIM for root user ###
-echo "
+cat <<'EOF' >> /root/.vimrc
 set hlsearch
-set mouse=r" > /root/.vimrc
+set mouse=r
+EOF
 
 cd /usr/src
 
@@ -172,11 +172,11 @@ install -m 644 files/odbc/odbc.ini /etc/odbc.ini
 systemctl restart asterisk
 
 setup_apache
+
 # Install and setup FreePBX
 install_setup_freepbx
 
-mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket;"
-mysql -u root -e "FLUSH PRIVILEGES;"
+
 
 install -m 644 files/apache/httpdconf/incrediblepbx.conf /etc/apache2/conf-available/incrediblepbx.conf
 echo "
@@ -197,8 +197,6 @@ setup_firewall
 
 #IPtables Setup
 cd /root
-echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
-echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
 
 
 # Local server IP (outbound interface)
@@ -215,32 +213,10 @@ ipset add trusted_hosts "$serverip" -exist
 ipset add trusted_hosts "$userip" -exist
 ipset add trusted_hosts "$publicip" -exist
 # WhiteList all of them by replacing 8.8.4.4 and 8.8.8.8 and 74.86.213.25 entries
-cp /etc/iptables/rules.v4 /etc/iptables/rules.v4.orig
-cd /etc/iptables
-cp /etc/iptables/rules.v4 /etc/iptables/rules.v4.orig
+
 
 
 mv openssl.cnf /etc/ssl
-cp rules.v4.tm4 rules.v4
-
-
-badline=`grep -n "\-s  \-p" /etc/iptables/rules.v4 | cut -f1 -d: | tail -1`
-while [[ "$badline" != "" ]]; do
-sed -i "${badline}d" /etc/iptables/rules.v4
-badline=`grep -n "\-s  \-p" /etc/iptables/rules.v4 | cut -f1 -d: | tail -1`
-done
-sed -i 's|-A INPUT -s  -j|#-A INPUT -s  -j|g' /etc/iptables/rules.v4
-
-/usr/local/sbin/iptables-custom
-systemctl restart iptables
-/usr/local/sbin/iptables-custom
-
-
-
-
-
-
-
 
 systemctl enable fail2ban
 systemctl start fail2ban
@@ -250,27 +226,13 @@ systemctl start fail2ban
 
 
 # CentOS-like color scheme for ls
-echo "export LS_OPTIONS='--color=auto'
-eval \"\`dircolors\`\"
-alias ls='ls \$LS_OPTIONS'
-alias ll='ls -l \$LS_OPTIONS'" >> /etc/bash.bashrc
+alias ls='ls --color=auto'
+alias ll='ls -alF'
+eval "$(dircolors -b)"
 
 
 
 
-# Checking for IPv6
-#test=`ifconfig | grep inet6`
-#if [ -z "$test" ]; then
-# echo "IPv6 not enabled."
-#else
- echo "Disabling IPv6..."
- echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/70-disable-ipv6.conf
- sysctl -p -f /etc/sysctl.d/70-disable-ipv6.conf
- echo "IPv6 has been disabled."
-#fi
-
-/usr/local/sbin/iptables-custom
-iptables-save
 
 if [ -e "/usr/sbin/fwconsole" ]; then
     echo " "
@@ -326,32 +288,20 @@ rm iPBX-licenses.tar.gz
 
 
 
-systemctl enable sendmail
-systemctl start sendmail
-
-### Install knockd ###
 
 
 
 
 
 
-sed -i 's|; max_input_vars = 1000|max_input_vars = 5000|' /etc/php/8.2/apache2/php.ini
-# systemctl restart apache2.service
 
-rm -f /root/ucp-*
-rm -f /root/switch-to-php*
-rm -f /root/*.deb
-rm -f /root/*.rpm
+
 
 # gTTS update
 apt-get update
 install_gtts
 
-pip install --upgrade pip
-pip3 install --upgrade pip
-ln -s /usr/bin/pip3 /usr/bin/pip
-pip install gTTS
+
 
 cd /var/lib/asterisk/agi-bin
 wget http://incrediblepbx.com/today3.tar.gz
@@ -375,10 +325,7 @@ else
     echo -e "127.0.1.1\t$HOSTNAME ${HOSTNAME%%.*}" >> /etc/hosts
 fi
 
-sed -i '/^\[custom-fax/,/^$/d' /etc/asterisk/extensions_custom.conf
 
-
-###  Add the update checker program  ###
 
 
 
@@ -389,10 +336,7 @@ wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/enable-gmail-smarthost-
 rm -f enable-gmail-smarthost-for-sendmail
 chmod +x enable-gmail-smarthost-with-postfix
 
-/usr/local/sbin/iptables-custom
-chattr -i /etc/rc.local
-chmod +x /etc/rc.local
-chattr +i /etc/rc.local
+
 
 ### Set up log rotation for Asterisk log files ###
 touch /etc/logrotate.d/asterisk
@@ -572,8 +516,8 @@ install_php_stack() {
         php8.2-memcached \
         php-pear
     
-    install -m 644 files/php/php-fpm/www.conf /etc/php/8.2/fpm/pool.d/www.conf
-    install -m 644 files/php/php-fpm/override.conf /etc/systemd/system/php8.2-fpm.service.d/override.conf
+    install -m 644 files/etc/php/8.2/fpm/pool.d/www.conf /etc/php/8.2/fpm/pool.d/www.conf
+    install -m 644 files/etc/systemd/system/php8.2-fpm.service.d/override.conf /etc/systemd/system/php8.2-fpm.service.d/override.conf
     
     systemctl daemon-reload
     
@@ -583,9 +527,11 @@ install_php_stack() {
 
     sed -i 's/^memory_limit *= *.*/memory_limit = 256M/' /etc/php/8.2/fpm/php.ini
     sed -i 's/^upload_max_filesize *= *.*/upload_max_filesize = 20M/' /etc/php/8.2/fpm/php.ini
+    sed -i 's|^;*\s*max_input_vars\s*=.*|max_input_vars = 5000|' /etc/php/8.2/fpm/php.ini
     
     sed -i 's/^memory_limit *= *.*/memory_limit = 256M/' /etc/php/8.2/cli/php.ini
     sed -i 's/^upload_max_filesize *= *.*/upload_max_filesize = 20M/' /etc/php/8.2/cli/php.ini
+    
     
     systemctl enable --now php8.2-fpm
 
@@ -687,7 +633,7 @@ install_setup_asterisk() {
     rm -rf menuselect-incredible*
 
     export CFLAGS='-DENABLE_SRTP_AES_256 -DENABLE_SRTP_AES_GCM' 
-    ./configure --with-pjproject-bundled --with-jansson-bundled
+    ./configure 
     make menuselect.makeopts
     
     menuselect/menuselect --enable-category MENUSELECT_ADDONS menuselect.makeopts
@@ -742,7 +688,7 @@ install_setup_freepbx() {
     
 fwconsole reload
 fwconsole restart
-install -m 644 files/systemd/freepbx.service /etc/systemd/system/freepbx.service
+install -m 644 files//etc/systemd/system/freepbx.service /etc/systemd/system/freepbx.service
     
 systemctl daemon-reload
 systemctl enable freepbx
@@ -760,45 +706,52 @@ asterisk -rx "database put blacklist dest app-blackhole,no-service,1"
 
 install_incrediblepbx() {
 
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
+    
     #fwconsole ma install incrediblepbx
 
-echo "Now downloading and restoring FreePBX backup of core IncrediblePBX system."
-cd /tmp
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
-fwconsole backup --restore /tmp/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
-rm 20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
-
-mysql -u root -ppassw0rd asterisk -e "update freepbx_settings SET value = '1' where keyword='CDR_BATCH_ENABLE';"
-mysql -u root -ppassw0rd asterisk -e "update admin SET value = 'true' where variable='need_reload';"
+    
+    #echo "Now downloading and restoring FreePBX backup of core IncrediblePBX system."
+    #cd /tmp
+    #wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
+    #fwconsole backup --restore /tmp/20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
+    #rm 20240725-153553-1721936153-17.0.17.1-791763876.tar.gz
+    #mysql -u root -ppassw0rd asterisk -e "update freepbx_settings SET value = '1' where keyword='CDR_BATCH_ENABLE';"
+    #mysql -u root -ppassw0rd asterisk -e "update admin SET value = 'true' where variable='need_reload';"
 
 ### Install Asteridex for FreePBX-17 ###
-cd /
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/asteridex17.tar.gz -O asteridex17.tar.gz
-tar zxvf asteridex17.tar.gz
-rm -f asteridex17.tar.gz
-cd /var/www/html/asteridex17/mysql
-./loadmysql.sh
-cd /var/www/html/admin/modules
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
-tar zxvf incrediblepbx-17.0.0.tgz
-cd /root
-fwconsole ma install asteridex
-fwconsole ma downloadinstall https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/IncrediblePBX-Branding-Module/incrediblepbx-17.0.0.tgz
-./sig-fix
-./sig-fix
+    cd /
+    #wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/asteridex17.tar.gz -O asteridex17.tar.gz
+    #tar zxvf asteridex17.tar.gz
+    #rm -f asteridex17.tar.gz
+    #cd /var/www/html/asteridex17/mysql
+    #./loadmysql.sh
+    cd /var/www/html/admin/modules
+
+    wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/incrediblepbx-17.0.0.tgz
+    tar zxvf incrediblepbx-17.0.0.tgz
+    cd /root
+    #fwconsole ma install asteridex
+    fwconsole ma downloadinstall https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/IncrediblePBX-Branding-Module/incrediblepbx-17.0.0.tgz
+
+    ./sig-fix
 
 
-mysql -u root asterisk -e 'update freepbx_settings set value = "Incredible PBX 2026" where keyword = "DASHBOARD_FREEPBX_BRAND"'
-echo "2025" > /etc/pbx/.version
-fwconsole reload
-cd /
-wget http://incrediblepbx.com/ipbx2024.tar.gz
-tar zxvf ipbx2024.tar.gz
-wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/iPBX-custom.tar.gz
-tar zxvf iPBX-custom.tar.gz
-sed -i 's|2025|2026|' /etc/pbx/.version
+    mysql -u root asterisk -e 'update freepbx_settings set value = "Incredible PBX 2026" where keyword = "DASHBOARD_FREEPBX_BRAND"'
+
+    # install .version file
+    install -m 640 files/etc/pbx/.version /etc/pbx/.version
+    fwconsole reload
+
+    
+    cd /
+    wget http://incrediblepbx.com/ipbx2024.tar.gz
+    tar zxvf ipbx2024.tar.gz
+    wget https://filedn.com/lBgbGypMOdDm8PWOoOiBR7j/Debian12/iPBX-custom.tar.gz
+    tar zxvf iPBX-custom.tar.gz
+
 }
+
+
 setup_apache()
 {
     sed -i 's/^\(User\|Group\).*/\1 asterisk/' /etc/apache2/apache2.conf
@@ -913,20 +866,23 @@ setup_firewall() {
     ipset create trusted_hosts hash:ip -exist
     ipset create restricted_hosts hash:ip -exist
     ipset create trusted_providers hash:ip -exist
-
+ipset create restricted_ssh hash:net family inet timeout 0 -exist
+ipset create restricted_webmin hash:net family inet timeout 0 -exist
+ipset create restricted_https hash:net family inet timeout 0 -exist
+ipset create restricted_sip hash:net family inet timeout 0 -exist
     systemctl enable ipset-restore
     
 }
 
 setup_fail2ban() {
-    install -m 644 files/fail2ban/fail2ban.local /etc/fail2ban/jail.d/fail2ban.local
-    install -m 644 files/fail2ban/defaults.local /etc/fail2ban/jail.d/defaults.local
-    install -m 644 files/fail2ban/sshd.local /etc/fail2ban/jail.d/sshd.local
-    install -m 644 files/fail2ban/asterisk.local /etc/fail2ban/jail.d/asterisk.local
+    install -m 644 files/etc/fail2ban/jail.d/fail2ban.local /etc/fail2ban/jail.d/fail2ban.local
+    install -m 644 files/etc/fail2ban/jail.d/defaults.local /etc/fail2ban/jail.d/defaults.local
+    install -m 644 files/etc/fail2ban/jail.d/sshd.local /etc/fail2ban/jail.d/sshd.local
+    install -m 644 files/etc/fail2ban/jail.d/asterisk.local /etc/fail2ban/jail.d/asterisk.local
 }
 
 setup_openvpn() {
-    install -m 644 files/systemd/openvpn2027.service /etc/systemd/system/openvpn2027.service
+    install -m 644 files/etc/systemd/system/openvpn2027.service /etc/systemd/system/openvpn2027.service
     cp -p /root/openvpn-start /etc/openvpn-start
     systemctl enable openvpn2027.service
     systemctl restart openvpn2027.service
@@ -992,3 +948,36 @@ configure_smarthost() {
 }
 
 configure_smarthost
+
+
+check_configure_ipv6(){
+    # Detect if IPv6 is actually available on the system
+if ip -6 addr show scope global >/dev/null 2>&1; then
+    echo ""
+    echo "IPv6 addresses were detected on this system."
+    echo "Some PBX deployments prefer IPv4-only environments."
+    echo ""
+
+    read -r -p "Do you want to disable IPv6 system-wide? [y/N]: " DISABLE_IPV6
+
+    case "$DISABLE_IPV6" in
+        [yY]|[yY][eE][sS])
+            echo "Disabling IPv6..."
+
+            cat <<'EOF' > /etc/sysctl.d/70-disable-ipv6.conf
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+
+            sysctl --system
+            echo "IPv6 has been disabled."
+            ;;
+        *)
+            echo "Leaving IPv6 enabled."
+            ;;
+    esac
+else
+    echo "No active IPv6 configuration detected. Skipping IPv6 settings."
+fi
+}
