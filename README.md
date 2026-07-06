@@ -1,3 +1,3 @@
-## IncrediblePBX Installer
+## IPBX Installer
 
-IncrediblePBX (C) 2007-2026 Ward Mundy & Associates, LLC
+Incredible PBX (C) 2007-2026 Ward Mundy & Associates, LLC
