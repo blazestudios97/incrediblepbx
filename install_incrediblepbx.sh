@@ -41,8 +41,7 @@ export PATH
 # source the logger functions
 source "$INSTALL_DIR"/installlibs/common-logger.sh
 source "$INSTALL_DIR"/installlibs/common-lib.sh
-exec > >(tee -i /root/incrediblepbx-install-log.txt)
-exec 2>&1
+
 
 
 # source all the needed install, configuration and setup functions
